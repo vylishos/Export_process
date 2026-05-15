@@ -61,7 +61,7 @@ def apply_prehled_formatting(writer, df_vystup):
         worksheet.column_dimensions[col_letter].width = max_len
 
 st.title("?? Excel Processing Tool")
-uploaded_file = st.file_upload("Nahrajte exportn� Excel soubor (.xlsx)", type=['xlsx'])
+uploaded_file = st.file_uploader("Nahrajte exportn� Excel soubor (.xlsx)", type=['xlsx'])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file, engine='openpyxl')

@@ -73,7 +73,7 @@ if uploaded_file:
         st.subheader("1. Skladový seznam")
         try:
             df1 = df.iloc[:, [25, 28, 26, 30]].copy()
-            df1.columns = ['N�zev', 'Reference', 'Varianta', 'Ks']
+            df1.columns = ['Název', 'Reference', 'Varianta', 'Ks']
             df1 = df1.dropna(subset=['Reference', 'Varianta']).copy()
             df1['Ks'] = pd.to_numeric(df1['Ks'], errors='coerce').fillna(0).astype(int)
             df1 = df1[df1['Ks'] > 0].sort_values(by=['Varianta'])

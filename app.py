@@ -3,7 +3,7 @@ import pandas as pd
 import io
 from openpyxl.styles import Font, Border, Side
 
-st.set_page_config(page_title="Excel Processor", layout="wide")
+st.set_page_config(page_title="Export processor", layout="wide")
 
 def apply_sklad_formatting(writer, df_sorted):
     worksheet = writer.sheets['Sklad']
@@ -20,7 +20,7 @@ def apply_sklad_formatting(writer, df_sorted):
                 cell.border = thin_border
 
     if not df_sorted.empty:
-        max_length = max([len(str(val)) for val in df_sorted['N�zev']] + [10])
+        max_length = max([len(str(val)) for val in df_sorted['Název']] + [10])
         worksheet.column_dimensions['A'].width = max_length + 2
 
     for col in ['B', 'C', 'D']:
@@ -60,17 +60,17 @@ def apply_prehled_formatting(writer, df_vystup):
         col_letter = chr(65 + i) if i < 26 else f"A{chr(65 + (i-26))}"
         worksheet.column_dimensions[col_letter].width = max_len
 
-st.title("?? Excel Processing Tool")
-uploaded_file = st.file_uploader("Nahrajte exportn� Excel soubor (.xlsx)", type=['xlsx'])
+st.title("Export processor")
+uploaded_file = st.file_uploader("Nahrajte exportní Excel soubor (.xlsx)", type=['xlsx'])
 
 if uploaded_file:
     df = pd.read_excel(uploaded_file, engine='openpyxl')
-    st.success("Soubor �sp�n� nahr�n!")
+    st.success("Soubor úspěšně nahrán!")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("1. Skladov� seznam")
+        st.subheader("1. Skladový seznam")
         try:
             df1 = df.iloc[:, [25, 28, 26, 30]].copy()
             df1.columns = ['N�zev', 'Reference', 'Varianta', 'Ks']
@@ -83,15 +83,15 @@ if uploaded_file:
                 df1.to_excel(writer, index=False, sheet_name='Sklad')
                 apply_sklad_formatting(writer, df1)
             
-            st.download_button("St�hnout Skladov� seznam", data=output1.getvalue(), file_name="seznam_pro_sklad.xlsx")
+            st.download_button("Stáhnout Skladový seznam", data=output1.getvalue(), file_name="seznam_pro_sklad.xlsx")
         except Exception as e:
-            st.error(f"Chyba p�i tvorb� skladu: {e}")
+            st.error(f"Chyba při tvorbě skladu: {e}")
 
     with col2:
-        st.subheader("2. P�ehled objedn�vek")
+        st.subheader("2. Přehled objednávek")
         try:
             df_vystup = df.iloc[:, [0, 2, 28, 26, 30]].copy()
-            df_vystup.columns = ['��slo objedn�vky', 'Jm�no', 'Reference', 'Varianta', 'Ks']
+            df_vystup.columns = ['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks']
             maska = df_vystup[['Reference', 'Varianta', 'Ks']].notnull().all(axis=1)
             df_vystup.loc[~maska, ['Reference', 'Varianta', 'Ks']] = None
             
@@ -100,6 +100,6 @@ if uploaded_file:
                 df_vystup.to_excel(writer, index=False, sheet_name='Prehled')
                 apply_prehled_formatting(writer, df_vystup)
             
-            st.download_button("St�hnout P�ehled objedn�vek", data=output2.getvalue(), file_name="Prehled_objednavek.xlsx")
+            st.download_button("Stáhnout Přehled objednávek", data=output2.getvalue(), file_name="Prehled_objednavek.xlsx")
         except Exception as e:
-            st.error(f"Chyba p�i tvorb� p�ehledu: {e}")
+            st.error(f"Chyba při tvorbě přehledu: {e}")

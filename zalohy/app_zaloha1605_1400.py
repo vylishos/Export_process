@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import io
 from openpyxl.styles import Font, Border, Side
-from datetime import datetime  # Knihovna pro práci s časem a datem
 
 st.set_page_config(page_title="Export processor", layout="wide")
 
@@ -49,12 +48,15 @@ def apply_prehled_formatting(writer, df_vystup):
                 cell.border = top_border_only if val_a is not None and str(val_a).strip() != "" else no_border
 
     for i, col_name in enumerate(df_vystup.columns):
+        # P�evedeme v�e na string, nahrad�me NaN pr�zdn�m �et�zcem a spo��t�me d�lky
         column_data = df_vystup[col_name].astype(str).fillna('')
+        # Vyfiltrujeme texty 'nan' nebo 'None', kter� astype(str) ob�as vytvo�� z pr�zdn�ch bun�k
         clean_lengths = column_data.replace(['nan', 'None'], '').apply(len)
         
         max_content_len = clean_lengths.max() if not clean_lengths.empty else 0
         max_len = max(max_content_len, len(str(col_name))) + 2
         
+        # O�et�en� pro p��pad, �e by index sloupc� p�es�hl p�smeno Z (pro jistotu)
         col_letter = chr(65 + i) if i < 26 else f"A{chr(65 + (i-26))}"
         worksheet.column_dimensions[col_letter].width = max_len
 
@@ -64,10 +66,6 @@ uploaded_file = st.file_uploader("Nahrajte exportní Excel soubor (.xlsx)", type
 if uploaded_file:
     df = pd.read_excel(uploaded_file, engine='openpyxl')
     st.success("Soubor úspěšně nahrán!")
-
-    # Vygenerujeme aktuální datum ve formátu např. 16.5.
-    # %d je den bez nuly na začátku, %m je měsíc bez nuly na začátku
-    aktualni_datum = datetime.now().strftime("%d.%m.")
 
     col1, col2 = st.columns(2)
 
@@ -85,12 +83,7 @@ if uploaded_file:
                 df1.to_excel(writer, index=False, sheet_name='Sklad')
                 apply_sklad_formatting(writer, df1)
             
-            # Přidáno datum do názvu stahovaného souboru
-            st.download_button(
-                label="Stáhnout Skladový seznam", 
-                data=output1.getvalue(), 
-                file_name=f"seznam_pro_sklad_{aktualni_datum}xlsx"
-            )
+            st.download_button("Stáhnout Skladový seznam", data=output1.getvalue(), file_name="seznam_pro_sklad.xlsx")
         except Exception as e:
             st.error(f"Chyba při tvorbě skladu: {e}")
 
@@ -107,11 +100,6 @@ if uploaded_file:
                 df_vystup.to_excel(writer, index=False, sheet_name='Prehled')
                 apply_prehled_formatting(writer, df_vystup)
             
-            # Přidáno datum do názvu stahovaného souboru
-            st.download_button(
-                label="Stáhnout Přehled objednávek", 
-                data=output2.getvalue(), 
-                file_name=f"Prehled_objednavek_{aktualni_datum}xlsx"
-            )
+            st.download_button("Stáhnout Přehled objednávek", data=output2.getvalue(), file_name="Prehled_objednavek.xlsx")
         except Exception as e:
             st.error(f"Chyba při tvorbě přehledu: {e}")

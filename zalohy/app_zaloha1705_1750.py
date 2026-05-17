@@ -13,11 +13,13 @@ def apply_sklad_formatting(writer, df_sorted):
     header_font = Font(bold=True)
     date_font = Font(bold=True, size=11)
 
+    # Formátování prvního řádku (Datum)
     worksheet['A1'].font = date_font
 
+    # Formátování od 2. řádku dál (množství řádků se zvětšilo o 1 kvůli nadpisu)
     for row_idx, row in enumerate(worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=4)):
         for cell in row:
-            if row_idx == 0:
+            if row_idx == 0:  # To je teď 2. řádek v Excelu (hlavička sloupců)
                 cell.font = header_font
                 cell.border = thick_bottom_border
             else:
@@ -42,12 +44,13 @@ def apply_prehled_formatting(writer, df_vystup):
     date_font = Font(bold=True, size=11)
     no_border = Border()
 
+    # Formátování prvního řádku (Datum)
     worksheet['A1'].font = date_font
 
-    for r_idx in range(2, max_row + 1):
+    for r_idx in range(2, max_row + 1):  # Začínáme až od 2. řádku
         for c_idx in range(1, max_col + 1):
             cell = worksheet.cell(row=r_idx, column=c_idx)
-            if r_idx == 2:
+            if r_idx == 2:  # Hlavička sloupců je na 2. řádku
                 cell.font = header_font
                 cell.border = header_border
             else:
@@ -71,7 +74,9 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file, engine='openpyxl')
     st.success("Soubor úspěšně nahrán!")
 
+    # Krátké datum pro název souboru (např. 16.5.)
     datum_soubor = datetime.now().strftime("%d.%m.")
+    # Oficiální datum pro text uvnitř Excelu (např. 16.05.2026)
     datum_text = datetime.now().strftime("%d.%m.%Y")
 
     col1, col2 = st.columns(2)
@@ -81,16 +86,19 @@ if uploaded_file:
         try:
             df1 = df.iloc[:, [25, 28, 26, 30]].copy()
             df1.columns = ['Název', 'Reference', 'Varianta', 'Ks']
-            
-            df1 = df1.dropna(subset=['Reference']).copy()
+            df1 = df1.dropna(subset=['Reference', 'Varianta']).copy()
             df1['Ks'] = pd.to_numeric(df1['Ks'], errors='coerce').fillna(0).astype(int)
             df1 = df1[df1['Ks'] > 0].sort_values(by=['Varianta'])
             
             output1 = io.BytesIO()
             with pd.ExcelWriter(output1, engine='openpyxl') as writer:
+                # startrow=1 posune celou tabulku (včetně hlaviček) na 2. řádek v Excelu
                 df1.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
+                
+                # Zápis data na úplně první řádek do buňky A1
                 worksheet = writer.sheets['Sklad']
                 worksheet['A1'] = f"Export ze dne: {datum_text}"
+                
                 apply_sklad_formatting(writer, df1)
             
             st.download_button(
@@ -106,22 +114,18 @@ if uploaded_file:
         try:
             df_vystup = df.iloc[:, [0, 2, 28, 26, 30]].copy()
             df_vystup.columns = ['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks']
-            
-            # OPRAVA: Kontrola pouze Reference a Ks
-            maska = df_vystup[['Reference', 'Ks']].notnull().all(axis=1)
-            
-            # OPRAVA: Pokud řádek neodpovídá, vymažeme pouze Reference a Ks. 
-            # Sloupec 'Varianta' zde už nebudeme nulovat, aby v něm zůstala původní hodnota (nebo prázdno)
-            df_vystup.loc[~maska, ['Reference', 'Ks']] = None
-            
-            # Navíc vymažeme úplně prázdné řádky, kde chybí číslo objednávky i reference
-            df_vystup = df_vystup.dropna(subset=['Číslo objednávky', 'Reference'], how='all').copy()
+            maska = df_vystup[['Reference', 'Varianta', 'Ks']].notnull().all(axis=1)
+            df_vystup.loc[~maska, ['Reference', 'Varianta', 'Ks']] = None
             
             output2 = io.BytesIO()
             with pd.ExcelWriter(output2, engine='openpyxl') as writer:
+                # startrow=1 posune celou tabulku na 2. řádek v Excelu
                 df_vystup.to_excel(writer, index=False, sheet_name='Prehled', startrow=1)
+                
+                # Zápis data na úplně první řádek do buňky A1
                 worksheet = writer.sheets['Prehled']
                 worksheet['A1'] = f"Export ze dne: {datum_text}"
+                
                 apply_prehled_formatting(writer, df_vystup)
             
             st.download_button(

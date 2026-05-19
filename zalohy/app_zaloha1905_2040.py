@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
-from openpyxl.styles import Font, Border, Side, Alignment
+from openpyxl.styles import Font, Border, Side
 from datetime import datetime
 
 st.set_page_config(page_title="Export processor", layout="wide")
@@ -41,27 +41,18 @@ def apply_prehled_formatting(writer, df_vystup):
     header_font = Font(bold=True)
     date_font = Font(bold=True, size=11)
     no_border = Border()
-    # Definujeme zarovnání doprava
-    align_right = Alignment(horizontal='right')
 
     worksheet['A1'].font = date_font
 
     for r_idx in range(2, max_row + 1):
         for c_idx in range(1, max_col + 1):
             cell = worksheet.cell(row=r_idx, column=c_idx)
-            
-            # OPRAVA: Pokud jsme v prvním sloupci (A), zarovnáme text doprava
-            if c_idx == 1:
-                cell.alignment = align_right
-
             if r_idx == 2:
                 cell.font = header_font
                 cell.border = header_border
             else:
                 val_a = worksheet.cell(row=r_idx, column=1).value
-                # Linku kreslíme jen pro nové objednávky (ignorujeme texty dopravců v sloupci A)
-                is_new_order = val_a is not None and str(val_a).strip() != "" and str(val_a).strip() not in ["Zásilkovna", "GLS", "UPS"]
-                cell.border = top_border_only if is_new_order else no_border
+                cell.border = top_border_only if val_a is not None and str(val_a).strip() != "" else no_border
 
     for i, col_name in enumerate(df_vystup.columns):
         column_data = df_vystup[col_name].astype(str).fillna('')
@@ -94,7 +85,10 @@ if uploaded_file:
             df1 = df1.dropna(subset=['Reference']).copy()
             df1['Ks'] = pd.to_numeric(df1['Ks'], errors='coerce').fillna(0).astype(int)
             
+            # OPRAVA CHYBY: Převedeme sloupec Varianta na text, aby se dal bezpečně seřadit,
+            # i když obsahuje čísla, texty nebo prázdné buňky (zobrazené jako "nan")
             df1['Varianta'] = df1['Varianta'].astype(str).replace('nan', '')
+            
             df1 = df1[df1['Ks'] > 0].sort_values(by=['Varianta'])
             
             output1 = io.BytesIO()
@@ -115,62 +109,12 @@ if uploaded_file:
     with col2:
         st.subheader("2. Přehled objednávek")
         try:
-            # Předpříprava detekčních masek
-            is_main_order = df.iloc[:, 0].notna()
-            is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
-            is_shipping = is_item.shift(1, fill_value=False) & ~is_item
+            df_vystup = df.iloc[:, [0, 2, 28, 26, 30]].copy()
+            df_vystup.columns = ['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks']
             
-            vystup_rows = []
-            
-            # Postupné procházení řádků a skládání nové tabulky
-            for idx, row in df.iterrows():
-                if is_main_order[idx]:
-                    vystup_rows.append({
-                        'Číslo objednávky': row.iloc[0],
-                        'Jméno': row.iloc[2],
-                        'Reference': None,
-                        'Varianta': None,
-                        'Ks': None
-                    })
-                elif is_item[idx]:
-                    vystup_rows.append({
-                        'Číslo objednávky': row.iloc[0],
-                        'Jméno': row.iloc[2],
-                        'Reference': row.iloc[28],
-                        'Varianta': row.iloc[26],
-                        'Ks': row.iloc[30]
-                    })
-                elif is_shipping[idx]:
-                    # Logika pro nahrazení textu dopravy
-                    puvodni_text = str(row.iloc[25]) if pd.notna(row.iloc[25]) else ""
-                    
-                    if "UPS" in puvodni_text:
-                        cisty_dopravce = "UPS"
-                    elif "GLS" in puvodni_text:
-                        cisty_dopravce = "GLS"
-                    else:
-                        cisty_dopravce = "Zásilkovna"
-                    
-                    # 1. Vložíme nejprve řádek se zjednodušenou dopravou (do sloupce A)
-                    vystup_rows.append({
-                        'Číslo objednávky': cisty_dopravce,
-                        'Jméno': None,
-                        'Reference': None,
-                        'Varianta': None,
-                        'Ks': None
-                    })
-
-                    # 2. Vložíme ÚPLNÝ PRÁZDNÝ řádek až POD dopravu (oddělovač před další objednávkou)
-                    vystup_rows.append({
-                        'Číslo objednávky': None,
-                        'Jméno': None,
-                        'Reference': None,
-                        'Varianta': None,
-                        'Ks': None
-                    })
-            
-            # Vytvoření výsledného DataFrame se správným pořadím sloupců
-            df_vystup = pd.DataFrame(vystup_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
+            maska = df_vystup[['Reference', 'Ks']].notnull().all(axis=1)
+            df_vystup.loc[~maska, ['Reference', 'Ks']] = None
+            df_vystup = df_vystup.dropna(subset=['Číslo objednávky', 'Reference'], how='all').copy()
             
             output2 = io.BytesIO()
             with pd.ExcelWriter(output2, engine='openpyxl') as writer:

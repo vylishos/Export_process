@@ -84,6 +84,11 @@ if uploaded_file:
             
             df1 = df1.dropna(subset=['Reference']).copy()
             df1['Ks'] = pd.to_numeric(df1['Ks'], errors='coerce').fillna(0).astype(int)
+            
+            # OPRAVA CHYBY: Převedeme sloupec Varianta na text, aby se dal bezpečně seřadit,
+            # i když obsahuje čísla, texty nebo prázdné buňky (zobrazené jako "nan")
+            df1['Varianta'] = df1['Varianta'].astype(str).replace('nan', '')
+            
             df1 = df1[df1['Ks'] > 0].sort_values(by=['Varianta'])
             
             output1 = io.BytesIO()
@@ -107,14 +112,8 @@ if uploaded_file:
             df_vystup = df.iloc[:, [0, 2, 28, 26, 30]].copy()
             df_vystup.columns = ['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks']
             
-            # OPRAVA: Kontrola pouze Reference a Ks
             maska = df_vystup[['Reference', 'Ks']].notnull().all(axis=1)
-            
-            # OPRAVA: Pokud řádek neodpovídá, vymažeme pouze Reference a Ks. 
-            # Sloupec 'Varianta' zde už nebudeme nulovat, aby v něm zůstala původní hodnota (nebo prázdno)
             df_vystup.loc[~maska, ['Reference', 'Ks']] = None
-            
-            # Navíc vymažeme úplně prázdné řádky, kde chybí číslo objednávky i reference
             df_vystup = df_vystup.dropna(subset=['Číslo objednávky', 'Reference'], how='all').copy()
             
             output2 = io.BytesIO()

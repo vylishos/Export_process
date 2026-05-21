@@ -57,7 +57,8 @@ def apply_prehled_formatting(writer, df_vystup):
                 cell.border = header_border
             else:
                 val_a = worksheet.cell(row=r_idx, column=1).value
-                is_new_order = val_a is not None and str(val_a).strip() != "" and str(val_a).strip() not in ["Zásilkovna", "GLS", "UPS"]
+                # Přidáno "PPL" do seznamu výjimek, aby se pod ním nekreslila horní linka nové objednávky
+                is_new_order = val_a is not None and str(val_a).strip() != "" and str(val_a).strip() not in ["Zásilkovna", "GLS", "UPS", "PPL"]
                 cell.border = top_border_only if is_new_order else no_border
 
     for i, col_name in enumerate(df_vystup.columns):
@@ -83,7 +84,7 @@ if uploaded_file:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Skladový seznam")
+        st.subheader("1. Skladový seznam")
         try:
             # --- 1A. KOMPLETNÍ SKLADOVÝ SEZNAM ---
             df1 = df.iloc[:, [25, 28, 26, 30]].copy()
@@ -110,9 +111,8 @@ if uploaded_file:
 
             # --- 1B. SKLADOVÝ SEZNAM (PRVNÍCH 30 OBJEDNÁVEK) ---
             st.markdown("---")
-            st.markdown("### ⏱️ Seznam pro prvních 30 objednávek")
+            st.markdown("### ⏱️ Omezený odběr (při zahlcení skladu)")
             
-            # Detekce a oříznutí pouze na prvních 30 objednávek
             order_cumsum = df.iloc[:, 0].notna().cumsum()
             df_pouze_30 = df[order_cumsum <= 30].copy()
             
@@ -135,15 +135,14 @@ if uploaded_file:
             st.download_button(
                 label="Stáhnout Skladový seznam - Prvních 30 objednávek", 
                 data=output1_30.getvalue(), 
-                file_name=f"seznam_pro_sklad_prvni_30_{datum_soubor}xlsx",
-                type="secondary"
+                file_name=f"seznam_pro_sklad_prvni_30_{datum_soubor}xlsx"
             )
             
         except Exception as e:
             st.error(f"Chyba při tvorbě skladu: {e}")
 
     with col2:
-        st.subheader("Přehled objednávek")
+        st.subheader("2. Přehled objednávek")
         try:
             is_main_order = df.iloc[:, 0].notna()
             is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
@@ -153,6 +152,7 @@ if uploaded_file:
             zasilkovna_rows = []
             gls_rows = []
             ups_rows = []
+            ppl_rows = [] # Nový seznam pro PPL
             
             current_order_rows = []
             
@@ -180,6 +180,8 @@ if uploaded_file:
                         cisty_dopravce = "UPS"
                     elif "GLS" in puvodni_text:
                         cisty_dopravce = "GLS"
+                    elif "PPL" in puvodni_text or "DHL" in puvodni_text: # Nové pravidlo pro PPL i DHL
+                        cisty_dopravce = "PPL"
                     else:
                         cisty_dopravce = "Zásilkovna"
                     
@@ -204,6 +206,8 @@ if uploaded_file:
                         ups_rows.extend(current_order_rows)
                     elif cisty_dopravce == "GLS":
                         gls_rows.extend(current_order_rows)
+                    elif cisty_dopravce == "PPL":
+                        ppl_rows.extend(current_order_rows)
                     else:
                         zasilkovna_rows.extend(current_order_rows)
                         
@@ -266,6 +270,21 @@ if uploaded_file:
                     label="Stáhnout Přehled - UPS", 
                     data=output_u.getvalue(), 
                     file_name=f"Prehled_UPS_{datum_soubor}xlsx"
+                )
+
+            # Generování a tlačítko pro PPL / DHL
+            if ppl_rows:
+                df_ppl = pd.DataFrame(ppl_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
+                output_p = io.BytesIO()
+                with pd.ExcelWriter(output_p, engine='openpyxl') as writer:
+                    df_ppl.to_excel(writer, index=False, sheet_name='Prehled', startrow=1)
+                    worksheet = writer.sheets['Prehled']
+                    worksheet['A1'] = f"Export PPL ze dne: {datum_text}"
+                    apply_prehled_formatting(writer, df_ppl)
+                st.download_button(
+                    label="Stáhnout Přehled - PPL", 
+                    data=output_p.getvalue(), 
+                    file_name=f"Prehled_PPL_{datum_soubor}xlsx"
                 )
                 
         except Exception as e:

@@ -83,9 +83,8 @@ if uploaded_file:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Skladový seznam")
+        st.subheader("1. Skladový seznam")
         try:
-            # --- 1A. KOMPLETNÍ SKLADOVÝ SEZNAM ---
             df1 = df.iloc[:, [25, 28, 26, 30]].copy()
             df1.columns = ['Název', 'Reference', 'Varianta', 'Ks']
             
@@ -103,52 +102,21 @@ if uploaded_file:
                 apply_sklad_formatting(writer, df1)
             
             st.download_button(
-                label="Stáhnout Kompletní skladový seznam", 
+                label="Stáhnout Skladový seznam", 
                 data=output1.getvalue(), 
                 file_name=f"seznam_pro_sklad_{datum_soubor}xlsx"
             )
-
-            # --- 1B. SKLADOVÝ SEZNAM (PRVNÍCH 30 OBJEDNÁVEK) ---
-            st.markdown("---")
-            st.markdown("### ⏱️ Seznam pro prvních 30 objednávek")
-            
-            # Detekce a oříznutí pouze na prvních 30 objednávek
-            order_cumsum = df.iloc[:, 0].notna().cumsum()
-            df_pouze_30 = df[order_cumsum <= 30].copy()
-            
-            df1_30 = df_pouze_30.iloc[:, [25, 28, 26, 30]].copy()
-            df1_30.columns = ['Název', 'Reference', 'Varianta', 'Ks']
-            
-            df1_30 = df1_30.dropna(subset=['Reference']).copy()
-            df1_30['Ks'] = pd.to_numeric(df1_30['Ks'], errors='coerce').fillna(0).astype(int)
-            
-            df1_30['Varianta'] = df1_30['Varianta'].astype(str).replace('nan', '')
-            df1_30 = df1_30[df1_30['Ks'] > 0].sort_values(by=['Varianta'])
-            
-            output1_30 = io.BytesIO()
-            with pd.ExcelWriter(output1_30, engine='openpyxl') as writer:
-                df1_30.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
-                worksheet = writer.sheets['Sklad']
-                worksheet['A1'] = f"Export (Prvních 30 obj.) ze dne: {datum_text}"
-                apply_sklad_formatting(writer, df1_30)
-                
-            st.download_button(
-                label="Stáhnout Skladový seznam - Prvních 30 objednávek", 
-                data=output1_30.getvalue(), 
-                file_name=f"seznam_pro_sklad_prvni_30_{datum_soubor}xlsx",
-                type="secondary"
-            )
-            
         except Exception as e:
             st.error(f"Chyba při tvorbě skladu: {e}")
 
     with col2:
-        st.subheader("Přehled objednávek")
+        st.subheader("2. Přehled objednávek")
         try:
             is_main_order = df.iloc[:, 0].notna()
             is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
             is_shipping = is_item.shift(1, fill_value=False) & ~is_item
             
+            # Příprava sběrných seznamů pro jednotlivé přehledy
             vystup_rows = []
             zasilkovna_rows = []
             gls_rows = []
@@ -198,6 +166,7 @@ if uploaded_file:
                         'Ks': None
                     })
                     
+                    # Rozdistribuování nasbírané objednávky do správných seznamů
                     vystup_rows.extend(current_order_rows)
                     
                     if cisty_dopravce == "UPS":
@@ -209,6 +178,7 @@ if uploaded_file:
                         
                     current_order_rows = []
             
+            # 1. GENEROVÁNÍ KOMPLETNÍHO PŘEHLEDU
             df_vystup = pd.DataFrame(vystup_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
             output2 = io.BytesIO()
             with pd.ExcelWriter(output2, engine='openpyxl') as writer:
@@ -223,9 +193,11 @@ if uploaded_file:
                 file_name=f"Prehled_objednavek_{datum_soubor}xlsx"
             )
             
+            # SEKCE PRO JEDNOTLIVÉ DOPRAVCE
             st.markdown("---")
-            st.markdown("### 📦 Přehledy podle dopravců")
+            st.markdown("### 📦 Objednávky podle dopravců")
             
+            # Generování Zásilkovny
             if zasilkovna_rows:
                 df_zasilkovna = pd.DataFrame(zasilkovna_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
                 output_z = io.BytesIO()
@@ -240,6 +212,7 @@ if uploaded_file:
                     file_name=f"Prehled_Zasilkovna_{datum_soubor}xlsx"
                 )
                 
+            # Generování GLS
             if gls_rows:
                 df_gls = pd.DataFrame(gls_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
                 output_g = io.BytesIO()
@@ -254,6 +227,7 @@ if uploaded_file:
                     file_name=f"Prehled_GLS_{datum_soubor}xlsx"
                 )
                 
+            # Generování UPS
             if ups_rows:
                 df_ups = pd.DataFrame(ups_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
                 output_u = io.BytesIO()

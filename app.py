@@ -41,7 +41,6 @@ def apply_prehled_formatting(writer, df_vystup):
     header_font = Font(bold=True)
     date_font = Font(bold=True, size=11)
     no_border = Border()
-    # Definujeme zarovnání doprava
     align_right = Alignment(horizontal='right')
 
     worksheet['A1'].font = date_font
@@ -50,7 +49,6 @@ def apply_prehled_formatting(writer, df_vystup):
         for c_idx in range(1, max_col + 1):
             cell = worksheet.cell(row=r_idx, column=c_idx)
             
-            # OPRAVA: Pokud jsme v prvním sloupci (A), zarovnáme text doprava
             if c_idx == 1:
                 cell.alignment = align_right
 
@@ -59,7 +57,6 @@ def apply_prehled_formatting(writer, df_vystup):
                 cell.border = header_border
             else:
                 val_a = worksheet.cell(row=r_idx, column=1).value
-                # Linku kreslíme jen pro nové objednávky (ignorujeme texty dopravců v sloupci A)
                 is_new_order = val_a is not None and str(val_a).strip() != "" and str(val_a).strip() not in ["Zásilkovna", "GLS", "UPS"]
                 cell.border = top_border_only if is_new_order else no_border
 
@@ -115,25 +112,29 @@ if uploaded_file:
     with col2:
         st.subheader("2. Přehled objednávek")
         try:
-            # Předpříprava detekčních masek
             is_main_order = df.iloc[:, 0].notna()
             is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
             is_shipping = is_item.shift(1, fill_value=False) & ~is_item
             
+            # Příprava sběrných seznamů pro jednotlivé přehledy
             vystup_rows = []
+            zasilkovna_rows = []
+            gls_rows = []
+            ups_rows = []
             
-            # Postupné procházení řádků a skládání nové tabulky
+            current_order_rows = []
+            
             for idx, row in df.iterrows():
                 if is_main_order[idx]:
-                    vystup_rows.append({
+                    current_order_rows = [{
                         'Číslo objednávky': row.iloc[0],
                         'Jméno': row.iloc[2],
                         'Reference': None,
                         'Varianta': None,
                         'Ks': None
-                    })
+                    }]
                 elif is_item[idx]:
-                    vystup_rows.append({
+                    current_order_rows.append({
                         'Číslo objednávky': row.iloc[0],
                         'Jméno': row.iloc[2],
                         'Reference': row.iloc[28],
@@ -141,7 +142,6 @@ if uploaded_file:
                         'Ks': row.iloc[30]
                     })
                 elif is_shipping[idx]:
-                    # Logika pro nahrazení textu dopravy
                     puvodni_text = str(row.iloc[25]) if pd.notna(row.iloc[25]) else ""
                     
                     if "UPS" in puvodni_text:
@@ -151,27 +151,35 @@ if uploaded_file:
                     else:
                         cisty_dopravce = "Zásilkovna"
                     
-                    # 1. Vložíme nejprve řádek se zjednodušenou dopravou (do sloupce A)
-                    vystup_rows.append({
+                    current_order_rows.append({
                         'Číslo objednávky': cisty_dopravce,
                         'Jméno': None,
                         'Reference': None,
                         'Varianta': None,
                         'Ks': None
                     })
-
-                    # 2. Vložíme ÚPLNÝ PRÁZDNÝ řádek až POD dopravu (oddělovač před další objednávkou)
-                    vystup_rows.append({
+                    current_order_rows.append({
                         'Číslo objednávky': None,
                         'Jméno': None,
                         'Reference': None,
                         'Varianta': None,
                         'Ks': None
                     })
+                    
+                    # Rozdistribuování nasbírané objednávky do správných seznamů
+                    vystup_rows.extend(current_order_rows)
+                    
+                    if cisty_dopravce == "UPS":
+                        ups_rows.extend(current_order_rows)
+                    elif cisty_dopravce == "GLS":
+                        gls_rows.extend(current_order_rows)
+                    else:
+                        zasilkovna_rows.extend(current_order_rows)
+                        
+                    current_order_rows = []
             
-            # Vytvoření výsledného DataFrame se správným pořadím sloupců
+            # 1. GENEROVÁNÍ KOMPLETNÍHO PŘEHLEDU
             df_vystup = pd.DataFrame(vystup_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
-            
             output2 = io.BytesIO()
             with pd.ExcelWriter(output2, engine='openpyxl') as writer:
                 df_vystup.to_excel(writer, index=False, sheet_name='Prehled', startrow=1)
@@ -180,9 +188,59 @@ if uploaded_file:
                 apply_prehled_formatting(writer, df_vystup)
             
             st.download_button(
-                label="Stáhnout Přehled objednávek", 
+                label="Stáhnout Kompletní přehled", 
                 data=output2.getvalue(), 
                 file_name=f"Prehled_objednavek_{datum_soubor}xlsx"
             )
+            
+            # SEKCE PRO JEDNOTLIVÉ DOPRAVCE
+            st.markdown("---")
+            st.markdown("### 📦 Objednávky podle dopravců")
+            
+            # Generování Zásilkovny
+            if zasilkovna_rows:
+                df_zasilkovna = pd.DataFrame(zasilkovna_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
+                output_z = io.BytesIO()
+                with pd.ExcelWriter(output_z, engine='openpyxl') as writer:
+                    df_zasilkovna.to_excel(writer, index=False, sheet_name='Prehled', startrow=1)
+                    worksheet = writer.sheets['Prehled']
+                    worksheet['A1'] = f"Export Zásilkovna ze dne: {datum_text}"
+                    apply_prehled_formatting(writer, df_zasilkovna)
+                st.download_button(
+                    label="Stáhnout Přehled - Zásilkovna", 
+                    data=output_z.getvalue(), 
+                    file_name=f"Prehled_Zasilkovna_{datum_soubor}xlsx"
+                )
+                
+            # Generování GLS
+            if gls_rows:
+                df_gls = pd.DataFrame(gls_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
+                output_g = io.BytesIO()
+                with pd.ExcelWriter(output_g, engine='openpyxl') as writer:
+                    df_gls.to_excel(writer, index=False, sheet_name='Prehled', startrow=1)
+                    worksheet = writer.sheets['Prehled']
+                    worksheet['A1'] = f"Export GLS ze dne: {datum_text}"
+                    apply_prehled_formatting(writer, df_gls)
+                st.download_button(
+                    label="Stáhnout Přehled - GLS", 
+                    data=output_g.getvalue(), 
+                    file_name=f"Prehled_GLS_{datum_soubor}xlsx"
+                )
+                
+            # Generování UPS
+            if ups_rows:
+                df_ups = pd.DataFrame(ups_rows, columns=['Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks'])
+                output_u = io.BytesIO()
+                with pd.ExcelWriter(output_u, engine='openpyxl') as writer:
+                    df_ups.to_excel(writer, index=False, sheet_name='Prehled', startrow=1)
+                    worksheet = writer.sheets['Prehled']
+                    worksheet['A1'] = f"Export UPS ze dne: {datum_text}"
+                    apply_prehled_formatting(writer, df_ups)
+                st.download_button(
+                    label="Stáhnout Přehled - UPS", 
+                    data=output_u.getvalue(), 
+                    file_name=f"Prehled_UPS_{datum_soubor}xlsx"
+                )
+                
         except Exception as e:
-            st.error(f"Chyba při tvorbě přehledu: {e}")
+            st.error(f"Chyba při tvorbě přehledů: {e}")

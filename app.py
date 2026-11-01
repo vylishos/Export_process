@@ -15,7 +15,8 @@ def apply_sklad_formatting(writer, df_sorted):
 
     worksheet['A1'].font = date_font
 
-    for row_idx, row in enumerate(worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=4)):
+    # Formátování 3 sloupců skladu (A=Reference, B=Varianta, C=Ks)
+    for row_idx, row in enumerate(worksheet.iter_rows(min_row=2, max_row=worksheet.max_row, min_col=1, max_col=3)):
         for cell in row:
             if row_idx == 0:
                 cell.font = header_font
@@ -23,12 +24,8 @@ def apply_sklad_formatting(writer, df_sorted):
             else:
                 cell.border = thin_border
 
-    if not df_sorted.empty:
-        max_length = max([len(str(val)) for val in df_sorted['Název']] + [10])
-        worksheet.column_dimensions['A'].width = max_length + 2
-
-    for col in ['B', 'C', 'D']:
-        worksheet.column_dimensions[col].width = 15
+    for col in ['A', 'B', 'C']:
+        worksheet.column_dimensions[col].width = 18
 
 def apply_prehled_formatting(writer, df_vystup):
     worksheet = writer.sheets['Prehled']
@@ -71,18 +68,23 @@ def apply_prehled_formatting(writer, df_vystup):
         worksheet.column_dimensions[col_letter].width = max_len
 
 def process_sklad_dataframe(df_items):
-    """Pomocná funkce pro zpracování a seřazení skladových položek"""
+    """Pomocná funkce pro zpracování a seřazení skladových položek (bez sloupce Název)"""
     if df_items.empty:
-        return pd.DataFrame(columns=['Název', 'Reference', 'Varianta', 'Ks'])
+        return pd.DataFrame(columns=['Reference', 'Varianta', 'Ks'])
     
     df_res = df_items.copy()
-    df_res.columns = ['Název', 'Reference', 'Varianta', 'Ks']
+    # Původní vstupy byly iloc[:, [25, 28, 26, 30]] -> indexy: 0: Název, 1: Reference, 2: Varianta, 3: Ks
+    # Ponecháme pouze [1, 2, 3] -> Reference, Varianta, Ks
+    if df_res.shape[1] == 4:
+        df_res = df_res.iloc[:, [1, 2, 3]]
+        
+    df_res.columns = ['Reference', 'Varianta', 'Ks']
     df_res = df_res.dropna(subset=['Reference']).copy()
     df_res['Ks'] = pd.to_numeric(df_res['Ks'], errors='coerce').fillna(0).astype(int)
     df_res['Varianta'] = df_res['Varianta'].astype(str).replace('nan', '')
     
-    # Agregace stejných položek (pokud se stejný produkt opakuje ve více objednávkách daného dopravce)
-    df_res = df_res[df_res['Ks'] > 0].groupby(['Název', 'Reference', 'Varianta'], as_index=False)['Ks'].sum()
+    # Agregace stejných položek (sečtení Ks dle Reference a Varianty)
+    df_res = df_res[df_res['Ks'] > 0].groupby(['Reference', 'Varianta'], as_index=False)['Ks'].sum()
     return df_res.sort_values(by=['Varianta'])
 
 st.title("Export processor")
@@ -146,7 +148,6 @@ if uploaded_file:
                 else:
                     zasilkovna_rows.extend(current_order_rows)
 
-                # Přidání položek do příslušného skladu
                 sklad_items_by_carrier[cisty_dopravce].extend(current_order_items_raw)
 
             current_order_rows = [{

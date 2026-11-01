@@ -68,7 +68,7 @@ def apply_prehled_formatting(writer, df_vystup):
         worksheet.column_dimensions[col_letter].width = max_len
 
 def process_sklad_dataframe(df_items):
-    """Pomocná funkce pro zpracování skladových položek (bez agregace duplicit, bez sloupce Název)"""
+    """Pomocná funkce pro zpracování skladových položek (řazení dle Varianty a následně Reference A-Z)"""
     if df_items.empty:
         return pd.DataFrame(columns=['Reference', 'Varianta', 'Ks'])
     
@@ -81,9 +81,11 @@ def process_sklad_dataframe(df_items):
     df_res['Ks'] = pd.to_numeric(df_res['Ks'], errors='coerce').fillna(0).astype(int)
     df_res['Varianta'] = df_res['Varianta'].astype(str).replace('nan', '')
     
-    # Zachování původních samostatných řádků bez sloučení
+    # Zachování původních samostatných řádků
     df_res = df_res[df_res['Ks'] > 0]
-    return df_res.sort_values(by=['Varianta'])
+    
+    # Primární řazení dle Varianty, sekundární dle Reference A-Z
+    return df_res.sort_values(by=['Varianta', 'Reference'])
 
 st.title("Export processor")
 uploaded_file = st.file_uploader("Nahrajte exportní Excel soubor (.xlsx)", type=['xlsx'])

@@ -209,7 +209,7 @@ if uploaded_file:
                         cisty_dopravce = "UPS"
                     elif "GLS" in puvodni_text:
                         cisty_dopravce = "GLS"
-                    elif "PPL" in puvodni_text:
+                    elif any(kwd in puvodni_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
                         cisty_dopravce = "PPL"
                     else:
                         cisty_dopravce = "Zásilkovna"

@@ -56,7 +56,6 @@ def apply_prehled_formatting(writer, df_vystup):
                 cell.font = header_font
                 cell.border = header_border
             else:
-                # Kontrola 2. sloupce (Číslo objednávky), zda začíná nová objednávka
                 val_b = worksheet.cell(row=r_idx, column=2).value
                 is_new_order = val_b is not None and str(val_b).strip() != "" and str(val_b).strip().lower() != "nan"
                 cell.border = top_border_only if is_new_order else no_border
@@ -86,7 +85,6 @@ if uploaded_file:
     with col1:
         st.subheader("Skladový seznam")
         try:
-            # --- 1A. KOMPLETNÍ SKLADOVÝ SEZNAM ---
             df1 = df.iloc[:, [25, 28, 26, 30]].copy()
             df1.columns = ['Název', 'Reference', 'Varianta', 'Ks']
             
@@ -112,10 +110,8 @@ if uploaded_file:
             st.markdown("---")
             st.markdown("### ⏱️Rozdělení skladu při zahlcení")
             
-            # Společný index pro sledování pořadí objednávek
             order_cumsum = df.iloc[:, 0].notna().cumsum()
             
-            # --- 1B. SKLADOVÝ SEZNAM (PRVNÍCH 30 OBJEDNÁVEK) ---
             df_pouze_30 = df[order_cumsum <= 30].copy()
             df1_30 = df_pouze_30.iloc[:, [25, 28, 26, 30]].copy()
             df1_30.columns = ['Název', 'Reference', 'Varianta', 'Ks']
@@ -138,7 +134,6 @@ if uploaded_file:
                 file_name=f"seznam_pro_sklad_prvni_30_{datum_soubor}xlsx"
             )
             
-            # --- 1C. SKLADOVÝ SEZNAM (OD 31. OBJEDNÁVKY DÁL) ---
             df_zbytek = df[order_cumsum > 30].copy()
             
             if not df_zbytek.empty:
@@ -173,7 +168,6 @@ if uploaded_file:
         try:
             is_main_order = df.iloc[:, 0].notna()
             is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
-            is_shipping = is_item.shift(1, fill_value=False) & ~is_item
             
             vystup_rows = []
             zasilkovna_rows = []
@@ -182,9 +176,39 @@ if uploaded_file:
             ppl_rows = []
             
             current_order_rows = []
+            current_extra_texts = []
             
             for idx, row in df.iterrows():
                 if is_main_order[idx]:
+                    if current_order_rows:
+                        # Vyhodnocení dopravce pro předchozí objednávku
+                        combined_text = " ".join(current_extra_texts)
+                        if "UPS" in combined_text:
+                            cisty_dopravce = "UPS"
+                        elif "GLS" in combined_text:
+                            cisty_dopravce = "GLS"
+                        elif any(kwd in combined_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
+                            cisty_dopravce = "PPL"
+                        else:
+                            cisty_dopravce = "Zásilkovna"
+                        
+                        current_order_rows[0]['Dopravce'] = cisty_dopravce
+                        current_order_rows.append({
+                            'Dopravce': None, 'Číslo objednávky': None, 'Jméno': None,
+                            'Reference': None, 'Varianta': None, 'Ks': None
+                        })
+                        
+                        vystup_rows.extend(current_order_rows)
+                        if cisty_dopravce == "UPS":
+                            ups_rows.extend(current_order_rows)
+                        elif cisty_dopravce == "GLS":
+                            gls_rows.extend(current_order_rows)
+                        elif cisty_dopravce == "PPL":
+                            ppl_rows.extend(current_order_rows)
+                        else:
+                            zasilkovna_rows.extend(current_order_rows)
+
+                    # Začátek nové objednávky
                     current_order_rows = [{
                         'Dopravce': None,
                         'Číslo objednávky': row.iloc[0],
@@ -193,6 +217,8 @@ if uploaded_file:
                         'Varianta': None,
                         'Ks': None
                     }]
+                    current_extra_texts = []
+                    
                 elif is_item[idx]:
                     current_order_rows.append({
                         'Dopravce': None,
@@ -202,43 +228,40 @@ if uploaded_file:
                         'Varianta': row.iloc[26],
                         'Ks': row.iloc[30]
                     })
-                elif is_shipping[idx]:
+                else:
+                    # Nepoložkový řádek (slevový kód, doprava, platba apod.)
                     puvodni_text = str(row.iloc[25]) if pd.notna(row.iloc[25]) else ""
-                    
-                    if "UPS" in puvodni_text:
-                        cisty_dopravce = "UPS"
-                    elif "GLS" in puvodni_text:
-                        cisty_dopravce = "GLS"
-                    elif any(kwd in puvodni_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
-                        cisty_dopravce = "PPL"
-                    else:
-                        cisty_dopravce = "Zásilkovna"
-                    
-                    if current_order_rows:
-                        current_order_rows[0]['Dopravce'] = cisty_dopravce
-                    
-                    current_order_rows.append({
-                        'Dopravce': None,
-                        'Číslo objednávky': None,
-                        'Jméno': None,
-                        'Reference': None,
-                        'Varianta': None,
-                        'Ks': None
-                    })
-                    
-                    vystup_rows.extend(current_order_rows)
-                    
-                    if cisty_dopravce == "UPS":
-                        ups_rows.extend(current_order_rows)
-                    elif cisty_dopravce == "GLS":
-                        gls_rows.extend(current_order_rows)
-                    elif cisty_dopravce == "PPL":
-                        ppl_rows.extend(current_order_rows)
-                    else:
-                        zasilkovna_rows.extend(current_order_rows)
-                        
-                    current_order_rows = []
-            
+                    if puvodni_text:
+                        current_extra_texts.append(puvodni_text)
+
+            # Vyhodnocení poslední objednávky v souboru
+            if current_order_rows:
+                combined_text = " ".join(current_extra_texts)
+                if "UPS" in combined_text:
+                    cisty_dopravce = "UPS"
+                elif "GLS" in combined_text:
+                    cisty_dopravce = "GLS"
+                elif any(kwd in combined_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
+                    cisty_dopravce = "PPL"
+                else:
+                    cisty_dopravce = "Zásilkovna"
+                
+                current_order_rows[0]['Dopravce'] = cisty_dopravce
+                current_order_rows.append({
+                    'Dopravce': None, 'Číslo objednávky': None, 'Jméno': None,
+                    'Reference': None, 'Varianta': None, 'Ks': None
+                })
+                
+                vystup_rows.extend(current_order_rows)
+                if cisty_dopravce == "UPS":
+                    ups_rows.extend(current_order_rows)
+                elif cisty_dopravce == "GLS":
+                    gls_rows.extend(current_order_rows)
+                elif cisty_dopravce == "PPL":
+                    ppl_rows.extend(current_order_rows)
+                else:
+                    zasilkovna_rows.extend(current_order_rows)
+
             prehled_columns = ['Dopravce', 'Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks']
             
             df_vystup = pd.DataFrame(vystup_rows, columns=prehled_columns)

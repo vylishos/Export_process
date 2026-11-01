@@ -70,6 +70,21 @@ def apply_prehled_formatting(writer, df_vystup):
         col_letter = chr(65 + i) if i < 26 else f"A{chr(65 + (i-26))}"
         worksheet.column_dimensions[col_letter].width = max_len
 
+def process_sklad_dataframe(df_items):
+    """Pomocná funkce pro zpracování a seřazení skladových položek"""
+    if df_items.empty:
+        return pd.DataFrame(columns=['Název', 'Reference', 'Varianta', 'Ks'])
+    
+    df_res = df_items.copy()
+    df_res.columns = ['Název', 'Reference', 'Varianta', 'Ks']
+    df_res = df_res.dropna(subset=['Reference']).copy()
+    df_res['Ks'] = pd.to_numeric(df_res['Ks'], errors='coerce').fillna(0).astype(int)
+    df_res['Varianta'] = df_res['Varianta'].astype(str).replace('nan', '')
+    
+    # Agregace stejných položek (pokud se stejný produkt opakuje ve více objednávkách daného dopravce)
+    df_res = df_res[df_res['Ks'] > 0].groupby(['Název', 'Reference', 'Varianta'], as_index=False)['Ks'].sum()
+    return df_res.sort_values(by=['Varianta'])
+
 st.title("Export processor")
 uploaded_file = st.file_uploader("Nahrajte exportní Excel soubor (.xlsx)", type=['xlsx'])
 
@@ -80,161 +95,30 @@ if uploaded_file:
     datum_soubor = datetime.now().strftime("%d.%m.")
     datum_text = datetime.now().strftime("%d.%m.%Y")
 
-    col1, col2 = st.columns(2)
+    # --- PŘED-ZPRACOVÁNÍ OBJEDNÁVEK A DOPRAVCŮ PRO OBĚ ČÁSTI ---
+    is_main_order = df.iloc[:, 0].notna()
+    is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
+    
+    vystup_rows = []
+    zasilkovna_rows = []
+    gls_rows = []
+    ups_rows = []
+    ppl_rows = []
 
-    with col1:
-        st.subheader("Skladový seznam")
-        try:
-            df1 = df.iloc[:, [25, 28, 26, 30]].copy()
-            df1.columns = ['Název', 'Reference', 'Varianta', 'Ks']
-            
-            df1 = df1.dropna(subset=['Reference']).copy()
-            df1['Ks'] = pd.to_numeric(df1['Ks'], errors='coerce').fillna(0).astype(int)
-            
-            df1['Varianta'] = df1['Varianta'].astype(str).replace('nan', '')
-            df1 = df1[df1['Ks'] > 0].sort_values(by=['Varianta'])
-            
-            output1 = io.BytesIO()
-            with pd.ExcelWriter(output1, engine='openpyxl') as writer:
-                df1.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
-                worksheet = writer.sheets['Sklad']
-                worksheet['A1'] = f"Export ze dne: {datum_text}"
-                apply_sklad_formatting(writer, df1)
-            
-            st.download_button(
-                label="Stáhnout Kompletní skladový seznam", 
-                data=output1.getvalue(), 
-                file_name=f"seznam_pro_sklad_{datum_soubor}xlsx"
-            )
-
-            st.markdown("---")
-            st.markdown("### ⏱️Rozdělení skladu při zahlcení")
-            
-            order_cumsum = df.iloc[:, 0].notna().cumsum()
-            
-            df_pouze_30 = df[order_cumsum <= 30].copy()
-            df1_30 = df_pouze_30.iloc[:, [25, 28, 26, 30]].copy()
-            df1_30.columns = ['Název', 'Reference', 'Varianta', 'Ks']
-            
-            df1_30 = df1_30.dropna(subset=['Reference']).copy()
-            df1_30['Ks'] = pd.to_numeric(df1_30['Ks'], errors='coerce').fillna(0).astype(int)
-            df1_30['Varianta'] = df1_30['Varianta'].astype(str).replace('nan', '')
-            df1_30 = df1_30[df1_30['Ks'] > 0].sort_values(by=['Varianta'])
-            
-            output1_30 = io.BytesIO()
-            with pd.ExcelWriter(output1_30, engine='openpyxl') as writer:
-                df1_30.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
-                worksheet = writer.sheets['Sklad']
-                worksheet['A1'] = f"Export (Prvních 30 obj.) ze dne: {datum_text}"
-                apply_sklad_formatting(writer, df1_30)
-                
-            st.download_button(
-                label="Seznam pro prvních 30 objednávek", 
-                data=output1_30.getvalue(), 
-                file_name=f"seznam_pro_sklad_prvni_30_{datum_soubor}xlsx"
-            )
-            
-            df_zbytek = df[order_cumsum > 30].copy()
-            
-            if not df_zbytek.empty:
-                df1_zbytek = df_zbytek.iloc[:, [25, 28, 26, 30]].copy()
-                df1_zbytek.columns = ['Název', 'Reference', 'Varianta', 'Ks']
-                
-                df1_zbytek = df1_zbytek.dropna(subset=['Reference']).copy()
-                df1_zbytek['Ks'] = pd.to_numeric(df1_zbytek['Ks'], errors='coerce').fillna(0).astype(int)
-                df1_zbytek['Varianta'] = df1_zbytek['Varianta'].astype(str).replace('nan', '')
-                df1_zbytek = df1_zbytek[df1_zbytek['Ks'] > 0].sort_values(by=['Varianta'])
-                
-                output1_zbytek = io.BytesIO()
-                with pd.ExcelWriter(output1_zbytek, engine='openpyxl') as writer:
-                    df1_zbytek.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
-                    worksheet = writer.sheets['Sklad']
-                    worksheet['A1'] = f"Export (Od 31. obj. dál) ze dne: {datum_text}"
-                    apply_sklad_formatting(writer, df1_zbytek)
-                    
-                st.download_button(
-                    label="Seznam pro zbytek objednávek", 
-                    data=output1_zbytek.getvalue(), 
-                    file_name=f"seznam_pro_sklad_od_31_{datum_soubor}xlsx"
-                )
-            else:
-                st.info("V exportu není více než 30 objednávek (druhá část seznamu je prázdná).")
-            
-        except Exception as e:
-            st.error(f"Chyba při tvorbě skladu: {e}")
-
-    with col2:
-        st.subheader("Přehled objednávek")
-        try:
-            is_main_order = df.iloc[:, 0].notna()
-            is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
-            
-            vystup_rows = []
-            zasilkovna_rows = []
-            gls_rows = []
-            ups_rows = []
-            ppl_rows = []
-            
-            current_order_rows = []
-            current_extra_texts = []
-            
-            for idx, row in df.iterrows():
-                if is_main_order[idx]:
-                    if current_order_rows:
-                        # Vyhodnocení dopravce pro předchozí objednávku
-                        combined_text = " ".join(current_extra_texts)
-                        if "UPS" in combined_text:
-                            cisty_dopravce = "UPS"
-                        elif "GLS" in combined_text:
-                            cisty_dopravce = "GLS"
-                        elif any(kwd in combined_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
-                            cisty_dopravce = "PPL"
-                        else:
-                            cisty_dopravce = "Zásilkovna"
-                        
-                        current_order_rows[0]['Dopravce'] = cisty_dopravce
-                        current_order_rows.append({
-                            'Dopravce': None, 'Číslo objednávky': None, 'Jméno': None,
-                            'Reference': None, 'Varianta': None, 'Ks': None
-                        })
-                        
-                        vystup_rows.extend(current_order_rows)
-                        if cisty_dopravce == "UPS":
-                            ups_rows.extend(current_order_rows)
-                        elif cisty_dopravce == "GLS":
-                            gls_rows.extend(current_order_rows)
-                        elif cisty_dopravce == "PPL":
-                            ppl_rows.extend(current_order_rows)
-                        else:
-                            zasilkovna_rows.extend(current_order_rows)
-
-                    # Začátek nové objednávky
-                    current_order_rows = [{
-                        'Dopravce': None,
-                        'Číslo objednávky': row.iloc[0],
-                        'Jméno': row.iloc[2],
-                        'Reference': None,
-                        'Varianta': None,
-                        'Ks': None
-                    }]
-                    current_extra_texts = []
-                    
-                elif is_item[idx]:
-                    current_order_rows.append({
-                        'Dopravce': None,
-                        'Číslo objednávky': row.iloc[0],
-                        'Jméno': row.iloc[2],
-                        'Reference': row.iloc[28],
-                        'Varianta': row.iloc[26],
-                        'Ks': row.iloc[30]
-                    })
-                else:
-                    # Nepoložkový řádek (slevový kód, doprava, platba apod.)
-                    puvodni_text = str(row.iloc[25]) if pd.notna(row.iloc[25]) else ""
-                    if puvodni_text:
-                        current_extra_texts.append(puvodni_text)
-
-            # Vyhodnocení poslední objednávky v souboru
+    # Pro skladové seznamy dle dopravců
+    sklad_items_by_carrier = {
+        'UPS': [],
+        'GLS': [],
+        'PPL': [],
+        'Zásilkovna': []
+    }
+    
+    current_order_rows = []
+    current_order_items_raw = []
+    current_extra_texts = []
+    
+    for idx, row in df.iterrows():
+        if is_main_order[idx]:
             if current_order_rows:
                 combined_text = " ".join(current_extra_texts)
                 if "UPS" in combined_text:
@@ -262,6 +146,160 @@ if uploaded_file:
                 else:
                     zasilkovna_rows.extend(current_order_rows)
 
+                # Přidání položek do příslušného skladu
+                sklad_items_by_carrier[cisty_dopravce].extend(current_order_items_raw)
+
+            current_order_rows = [{
+                'Dopravce': None,
+                'Číslo objednávky': row.iloc[0],
+                'Jméno': row.iloc[2],
+                'Reference': None,
+                'Varianta': None,
+                'Ks': None
+            }]
+            current_order_items_raw = []
+            current_extra_texts = []
+            
+        elif is_item[idx]:
+            current_order_rows.append({
+                'Dopravce': None,
+                'Číslo objednávky': row.iloc[0],
+                'Jméno': row.iloc[2],
+                'Reference': row.iloc[28],
+                'Varianta': row.iloc[26],
+                'Ks': row.iloc[30]
+            })
+            current_order_items_raw.append(row.iloc[[25, 28, 26, 30]])
+        else:
+            puvodni_text = str(row.iloc[25]) if pd.notna(row.iloc[25]) else ""
+            if puvodni_text:
+                current_extra_texts.append(puvodni_text)
+
+    # Poslední objednávka
+    if current_order_rows:
+        combined_text = " ".join(current_extra_texts)
+        if "UPS" in combined_text:
+            cisty_dopravce = "UPS"
+        elif "GLS" in combined_text:
+            cisty_dopravce = "GLS"
+        elif any(kwd in combined_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
+            cisty_dopravce = "PPL"
+        else:
+            cisty_dopravce = "Zásilkovna"
+        
+        current_order_rows[0]['Dopravce'] = cisty_dopravce
+        current_order_rows.append({
+            'Dopravce': None, 'Číslo objednávky': None, 'Jméno': None,
+            'Reference': None, 'Varianta': None, 'Ks': None
+        })
+        
+        vystup_rows.extend(current_order_rows)
+        if cisty_dopravce == "UPS":
+            ups_rows.extend(current_order_rows)
+        elif cisty_dopravce == "GLS":
+            gls_rows.extend(current_order_rows)
+        elif cisty_dopravce == "PPL":
+            ppl_rows.extend(current_order_rows)
+        else:
+            zasilkovna_rows.extend(current_order_rows)
+
+        sklad_items_by_carrier[cisty_dopravce].extend(current_order_items_raw)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Skladový seznam")
+        try:
+            # --- 1A. KOMPLETNÍ SKLADOVÝ SEZNAM ---
+            df1_raw = df.iloc[:, [25, 28, 26, 30]].copy()
+            df1 = process_sklad_dataframe(df1_raw)
+            
+            output1 = io.BytesIO()
+            with pd.ExcelWriter(output1, engine='openpyxl') as writer:
+                df1.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
+                worksheet = writer.sheets['Sklad']
+                worksheet['A1'] = f"Export ze dne: {datum_text}"
+                apply_sklad_formatting(writer, df1)
+            
+            st.download_button(
+                label="Stáhnout Kompletní skladový seznam", 
+                data=output1.getvalue(), 
+                file_name=f"seznam_pro_sklad_{datum_soubor}xlsx"
+            )
+
+            st.markdown("---")
+            st.markdown("### ⏱️Rozdělení skladu při zahlcení")
+            
+            order_cumsum = df.iloc[:, 0].notna().cumsum()
+            
+            # --- 1B. SKLADOVÝ SEZNAM (PRVNÍCH 30 OBJEDNÁVEK) ---
+            df_pouze_30_raw = df[order_cumsum <= 30].iloc[:, [25, 28, 26, 30]]
+            df1_30 = process_sklad_dataframe(df_pouze_30_raw)
+            
+            output1_30 = io.BytesIO()
+            with pd.ExcelWriter(output1_30, engine='openpyxl') as writer:
+                df1_30.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
+                worksheet = writer.sheets['Sklad']
+                worksheet['A1'] = f"Export (Prvních 30 obj.) ze dne: {datum_text}"
+                apply_sklad_formatting(writer, df1_30)
+                
+            st.download_button(
+                label="Seznam pro prvních 30 objednávek", 
+                data=output1_30.getvalue(), 
+                file_name=f"seznam_pro_sklad_prvni_30_{datum_soubor}xlsx"
+            )
+            
+            # --- 1C. SKLADOVÝ SEZNAM (OD 31. OBJEDNÁVKY DÁL) ---
+            df_zbytek_raw = df[order_cumsum > 30].iloc[:, [25, 28, 26, 30]]
+            
+            if not df_zbytek_raw.empty:
+                df1_zbytek = process_sklad_dataframe(df_zbytek_raw)
+                
+                output1_zbytek = io.BytesIO()
+                with pd.ExcelWriter(output1_zbytek, engine='openpyxl') as writer:
+                    df1_zbytek.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
+                    worksheet = writer.sheets['Sklad']
+                    worksheet['A1'] = f"Export (Od 31. obj. dál) ze dne: {datum_text}"
+                    apply_sklad_formatting(writer, df1_zbytek)
+                    
+                st.download_button(
+                    label="Seznam pro zbytek objednávek", 
+                    data=output1_zbytek.getvalue(), 
+                    file_name=f"seznam_pro_sklad_od_31_{datum_soubor}xlsx"
+                )
+            else:
+                st.info("V exportu není více než 30 objednávek (druhá část seznamu je prázdná).")
+
+            # --- 1D. SKLADOVÉ SEZNAMY DLE DOPRAVCŮ ---
+            st.markdown("---")
+            st.markdown("### 🚚 Skladové seznamy podle dopravců")
+
+            for carrier in ['GLS', 'PPL', 'Zásilkovna', 'UPS']:
+                items_list = sklad_items_by_carrier[carrier]
+                if items_list:
+                    df_carrier_raw = pd.DataFrame(items_list)
+                    df_carrier_sklad = process_sklad_dataframe(df_carrier_raw)
+                    
+                    if not df_carrier_sklad.empty:
+                        out_carrier = io.BytesIO()
+                        with pd.ExcelWriter(out_carrier, engine='openpyxl') as writer:
+                            df_carrier_sklad.to_excel(writer, index=False, sheet_name='Sklad', startrow=1)
+                            worksheet = writer.sheets['Sklad']
+                            worksheet['A1'] = f"Export Sklad {carrier} ze dne: {datum_text}"
+                            apply_sklad_formatting(writer, df_carrier_sklad)
+                            
+                        st.download_button(
+                            label=f"Skladový seznam - {carrier}", 
+                            data=out_carrier.getvalue(), 
+                            file_name=f"seznam_pro_sklad_{carrier}_{datum_soubor}xlsx"
+                        )
+            
+        except Exception as e:
+            st.error(f"Chyba při tvorbě skladu: {e}")
+
+    with col2:
+        st.subheader("Přehled objednávek")
+        try:
             prehled_columns = ['Dopravce', 'Číslo objednávky', 'Jméno', 'Reference', 'Varianta', 'Ks']
             
             df_vystup = pd.DataFrame(vystup_rows, columns=prehled_columns)

@@ -68,13 +68,11 @@ def apply_prehled_formatting(writer, df_vystup):
         worksheet.column_dimensions[col_letter].width = max_len
 
 def process_sklad_dataframe(df_items):
-    """Pomocná funkce pro zpracování a seřazení skladových položek (bez sloupce Název)"""
+    """Pomocná funkce pro zpracování skladových položek (bez agregace duplicit, bez sloupce Název)"""
     if df_items.empty:
         return pd.DataFrame(columns=['Reference', 'Varianta', 'Ks'])
     
     df_res = df_items.copy()
-    # Původní vstupy byly iloc[:, [25, 28, 26, 30]] -> indexy: 0: Název, 1: Reference, 2: Varianta, 3: Ks
-    # Ponecháme pouze [1, 2, 3] -> Reference, Varianta, Ks
     if df_res.shape[1] == 4:
         df_res = df_res.iloc[:, [1, 2, 3]]
         
@@ -83,8 +81,8 @@ def process_sklad_dataframe(df_items):
     df_res['Ks'] = pd.to_numeric(df_res['Ks'], errors='coerce').fillna(0).astype(int)
     df_res['Varianta'] = df_res['Varianta'].astype(str).replace('nan', '')
     
-    # Agregace stejných položek (sečtení Ks dle Reference a Varianty)
-    df_res = df_res[df_res['Ks'] > 0].groupby(['Reference', 'Varianta'], as_index=False)['Ks'].sum()
+    # Zachování původních samostatných řádků bez sloučení
+    df_res = df_res[df_res['Ks'] > 0]
     return df_res.sort_values(by=['Varianta'])
 
 st.title("Export processor")

@@ -119,6 +119,12 @@ if uploaded_file:
     current_order_items_raw = []
     current_extra_texts = []
     
+    # Seznam klíčových slov spadajících pod PPL
+    ppl_keywords = [
+        "PPL", "DHL", "Colis Privé", "Posteitaliane",
+        "Posti Home Delivery", "Post Luxembourg Home Delivery", "Posta Slovenije Home Delivery"
+    ]
+    
     for idx, row in df.iterrows():
         if is_main_order[idx]:
             if current_order_rows:
@@ -127,7 +133,7 @@ if uploaded_file:
                     cisty_dopravce = "UPS"
                 elif "GLS" in combined_text:
                     cisty_dopravce = "GLS"
-                elif any(kwd in combined_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
+                elif any(kwd in combined_text for kwd in ppl_keywords):
                     cisty_dopravce = "PPL"
                 else:
                     cisty_dopravce = "Zásilkovna"
@@ -183,7 +189,7 @@ if uploaded_file:
             cisty_dopravce = "UPS"
         elif "GLS" in combined_text:
             cisty_dopravce = "GLS"
-        elif any(kwd in combined_text for kwd in ["PPL", "DHL", "Colis Privé", "Posteitaliane"]):
+        elif any(kwd in combined_text for kwd in ppl_keywords):
             cisty_dopravce = "PPL"
         else:
             cisty_dopravce = "Zásilkovna"

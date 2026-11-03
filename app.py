@@ -68,7 +68,7 @@ def apply_prehled_formatting(writer, df_vystup):
         worksheet.column_dimensions[col_letter].width = max_len
 
 def process_sklad_dataframe(df_items):
-    """Pomocná funkce pro zpracování skladových položek (řazení dle Varianty a následně Reference A-Z)"""
+    """Pomocná funkce pro zpracování skladových položek (odstranění .0 u variant, řazení dle Varianty a Reference)"""
     if df_items.empty:
         return pd.DataFrame(columns=['Reference', 'Varianta', 'Ks'])
     
@@ -79,7 +79,17 @@ def process_sklad_dataframe(df_items):
     df_res.columns = ['Reference', 'Varianta', 'Ks']
     df_res = df_res.dropna(subset=['Reference']).copy()
     df_res['Ks'] = pd.to_numeric(df_res['Ks'], errors='coerce').fillna(0).astype(int)
-    df_res['Varianta'] = df_res['Varianta'].astype(str).replace('nan', '')
+    
+    # Čištění varianty (odstranění .0 a nan)
+    def clean_variant(val):
+        if pd.isna(val) or str(val).strip().lower() in ['nan', 'none', '']:
+            return ""
+        val_str = str(val).strip()
+        if val_str.endswith('.0'):
+            return val_str[:-2]
+        return val_str
+
+    df_res['Varianta'] = df_res['Varianta'].apply(clean_variant)
     
     # Zachování původních samostatných řádků
     df_res = df_res[df_res['Ks'] > 0]
@@ -97,9 +107,10 @@ if uploaded_file:
     datum_soubor = datetime.now().strftime("%d.%m.")
     datum_text = datetime.now().strftime("%d.%m.%Y")
 
-    # --- PŘED-ZPRACOVÁNÍ OBJEDNÁVEK A DOPRAVCŮ PRO OBĚ ČÁSTI ---
+    # --- INDEXY SLUPEČKŮ PRO NOVOU STRUKTURU SOUBORU ---
+    # Col 0: Číslo obj, Col 2: Jméno, Col 27 (AB): Název/Doprava, Col 28 (AC): Varianta, Col 30 (AE): Reference, Col 32 (AG): Ks
     is_main_order = df.iloc[:, 0].notna()
-    is_item = df.iloc[:, 28].notna() & (df.iloc[:, 28].astype(str).str.strip() != '')
+    is_item = df.iloc[:, 30].notna() & (df.iloc[:, 30].astype(str).str.strip() != '')
     
     vystup_rows = []
     zasilkovna_rows = []
@@ -172,13 +183,13 @@ if uploaded_file:
                 'Dopravce': None,
                 'Číslo objednávky': row.iloc[0],
                 'Jméno': row.iloc[2],
-                'Reference': row.iloc[28],
-                'Varianta': row.iloc[26],
-                'Ks': row.iloc[30]
+                'Reference': row.iloc[30],
+                'Varianta': row.iloc[28],
+                'Ks': row.iloc[32]
             })
-            current_order_items_raw.append(row.iloc[[25, 28, 26, 30]])
+            current_order_items_raw.append(row.iloc[[27, 30, 28, 32]])
         else:
-            puvodni_text = str(row.iloc[25]) if pd.notna(row.iloc[25]) else ""
+            puvodni_text = str(row.iloc[27]) if pd.notna(row.iloc[27]) else ""
             if puvodni_text:
                 current_extra_texts.append(puvodni_text)
 
@@ -218,7 +229,7 @@ if uploaded_file:
         st.subheader("Skladový seznam")
         try:
             # --- 1A. KOMPLETNÍ SKLADOVÝ SEZNAM ---
-            df1_raw = df.iloc[:, [25, 28, 26, 30]].copy()
+            df1_raw = df.iloc[:, [27, 30, 28, 32]].copy()
             df1 = process_sklad_dataframe(df1_raw)
             
             output1 = io.BytesIO()
@@ -240,7 +251,7 @@ if uploaded_file:
             order_cumsum = df.iloc[:, 0].notna().cumsum()
             
             # --- 1B. SKLADOVÝ SEZNAM (PRVNÍCH 30 OBJEDNÁVEK) ---
-            df_pouze_30_raw = df[order_cumsum <= 30].iloc[:, [25, 28, 26, 30]]
+            df_pouze_30_raw = df[order_cumsum <= 30].iloc[:, [27, 30, 28, 32]]
             df1_30 = process_sklad_dataframe(df_pouze_30_raw)
             
             output1_30 = io.BytesIO()
@@ -257,7 +268,7 @@ if uploaded_file:
             )
             
             # --- 1C. SKLADOVÝ SEZNAM (OD 31. OBJEDNÁVKY DÁL) ---
-            df_zbytek_raw = df[order_cumsum > 30].iloc[:, [25, 28, 26, 30]]
+            df_zbytek_raw = df[order_cumsum > 30].iloc[:, [27, 30, 28, 32]]
             
             if not df_zbytek_raw.empty:
                 df1_zbytek = process_sklad_dataframe(df_zbytek_raw)
